@@ -20,6 +20,7 @@ import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Core;
@@ -60,6 +61,13 @@ public final class MongoDb4Provider implements NoSqlProvider<MongoDb4Connection>
         @PluginBuilderAttribute("capped")
         private boolean capped = false;
 
+        @PluginBuilderAttribute("collectionName")
+        private String collectionName = null;
+
+        @PluginBuilderAttribute("databaseName")
+        private String databaseName = null;
+
+
         @Override
         public MongoDb4Provider build() {
             StatusLogger.getLogger().warn("The {} Appender is deprecated, use the MongoDb Appender.", PLUGIN_NAME);
@@ -67,7 +75,7 @@ public final class MongoDb4Provider implements NoSqlProvider<MongoDb4Connection>
         }
 
         protected MongoDb4Provider newMongoDb4Provider() {
-            return new MongoDb4Provider(connectionStringSource, capped, collectionSize);
+            return new MongoDb4Provider(connectionStringSource, capped, collectionSize, collectionName, databaseName);
         }
 
         /**
@@ -113,6 +121,30 @@ public final class MongoDb4Provider implements NoSqlProvider<MongoDb4Connection>
             this.collectionSize = sizeInBytes;
             return asBuilder();
         }
+
+
+        /**
+         * Sets the collection name for the log output to be stored in
+         *
+         * @param collectionName the name of the target collection for log output
+         * @return this instance.
+         */
+        public B setCollectionName(final String collectionName) {
+            this.collectionName = collectionName;
+            return asBuilder();
+        }
+
+        /**
+         * Sets the database name for the log output to be stored in
+         *
+         * @param databaseName the name of the target database for log output
+         * @return this instance.
+         */
+        public B setDatabaseName(final String databaseName) {
+            this.databaseName = databaseName;
+            return asBuilder();
+        }
+
     }
 
     private static final Logger LOGGER = StatusLogger.getLogger();
@@ -140,11 +172,13 @@ public final class MongoDb4Provider implements NoSqlProvider<MongoDb4Connection>
 
     private final Long collectionSize;
     private final boolean isCapped;
+    private final String collectionName;
+    private final String databaseName;
     private final MongoClient mongoClient;
     private final MongoDatabase mongoDatabase;
     private final ConnectionString connectionString;
 
-    private MongoDb4Provider(final String connectionStringSource, final boolean isCapped, final Long collectionSize) {
+    private MongoDb4Provider(final String connectionStringSource, final boolean isCapped, final long collectionSize, String collectionName, String databaseName) {
         LOGGER.debug("Creating ConnectionString {}...", connectionStringSource);
         this.connectionString = new ConnectionString(connectionStringSource);
         LOGGER.debug("Created ConnectionString {}", connectionString);
@@ -159,26 +193,38 @@ public final class MongoDb4Provider implements NoSqlProvider<MongoDb4Connection>
         LOGGER.debug("Creating MongoClient {}...", settings);
         this.mongoClient = MongoClients.create(settings);
         LOGGER.debug("Created MongoClient {}", mongoClient);
-        final String databaseName = this.connectionString.getDatabase();
-        LOGGER.debug("Getting MongoDatabase {}...", databaseName);
-        this.mongoDatabase = this.mongoClient.getDatabase(databaseName);
+        if (databaseName == null || databaseName.isEmpty()){
+            this.databaseName = this.connectionString.getDatabase();
+        } else {
+            this.databaseName = databaseName;
+        }
+        LOGGER.debug("Getting MongoDatabase {}...", this.databaseName);
+        this.mongoDatabase = this.mongoClient.getDatabase(this.databaseName);
         LOGGER.debug("Got MongoDatabase {}", mongoDatabase);
+        if (collectionName == null || collectionName.isEmpty()){
+            this.collectionName = this.connectionString.getCollection();
+        } else {
+            this.collectionName = collectionName;
+        }
+        LOGGER.debug("Target collection name {}", collectionName);
         this.isCapped = isCapped;
-        this.collectionSize = collectionSize;
+        this.collectionSize = Long.valueOf(collectionSize);
+
     }
 
     @Override
     public MongoDb4Connection getConnection() {
-        return new MongoDb4Connection(connectionString, mongoClient, mongoDatabase, isCapped, collectionSize);
+        return new MongoDb4Connection(connectionString, mongoClient, mongoDatabase, collectionName, isCapped, collectionSize);
     }
 
     @Override
     public String toString() {
         return String.format(
-                "%s [connectionString=%s, collectionSize=%s, isCapped=%s, mongoClient=%s, mongoDatabase=%s]",
+                "%s [connectionString=%s, collectionSize=%s, collectionName=%s, isCapped=%s, mongoClient=%s, mongoDatabase=%s]",
                 MongoDb4Provider.class.getSimpleName(),
                 connectionString,
                 collectionSize,
+                collectionName,
                 isCapped,
                 mongoClient,
                 mongoDatabase);
